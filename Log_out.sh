@@ -10,7 +10,7 @@
 [[ $EUID -eq 0 ]] || { echo "root で実行してください"; exit 1; }
 
 # ログ出力用ファイルのパス
-LOG_FILE="/var/log/redmine.log"
+LOG_FILE="/var/log/application.log"
 
 MESSAGE="$1"   # メッセージを第1引数に変更
 CATEGORY=$2  # カテゴリーを第2引数に変更
