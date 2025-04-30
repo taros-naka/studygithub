@@ -29,8 +29,8 @@ MAIL_BODY="$4"
 #　メール送信
 #　$3及び$4が空の場合はスキップ
 if [ -z "$MAIL_SUBJECT" ] && [ -z "$MAIL_BODY" ]; then
-#　$3及び$4が空ではない場合、メール送信する
 
+#　$3及び$4が空ではない場合、メール送信する
 elif [ -n "$MAIL_SUBJECT" ] && [ -n "$MAIL_BODY" ]; then
     send_mail "$MAIL_SUBJECT" "$MAIL_BODY"
 
@@ -43,6 +43,7 @@ fi
 #　ログメッセージを生成してファイルに書き込む
 #　$2が空の場合、ログメッセージを生成しない
 if [ -z "$CATEGORY" ]; then
+    echo "CATEGORYが空です。処理をスキップします。" >&2
     exit 1
 fi
 log_message "$MESSAGE" "$CATEGORY"
