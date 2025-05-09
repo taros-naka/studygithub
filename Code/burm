@@ -1,0 +1,214 @@
+#!/bin/bash
+#ファイル名: redmine_backup.sh
+#作成日: 2025
+#作成内容: redmineのバックアップスクリプト
+#redmineバックアップスクリプト
+#説明：Redmineのfiles、config、DBをバックアップするスクリプト
+#　　　daily、weekly、monthlyのバックアップを取得する
+#options:
+#　　[-d : Dailyバックアップ|
+#　　-w : Weeklyバックアップ|
+#　　-m : Monthlyバックアップ|
+#　　-r : バックアップファイルのローテーション|
+#　　-h : ヘルプ]
+#/usr/binにて実行すること
+#実行例：/usr/bin/redmine_backup.sh -d
+#または　redmine_backup -d
+
+#注意点：filesディレクトリがコピーできないバグが発生しているので個別でmkdirしている
+
+#　root権限で実行することを確認
+[[ $EUID -eq 0 ]] || { echo "root で実行してください"; exit 1; }
+
+
+# ###################################################################################
+# 変数定義
+# ###################################################################################
+#バックアップ先親ディレクトリ
+BACKUP_DIR=/var/backups/redmine
+#バックアップ元(redmineのファイルズディレクトリ)
+REDMINE_FILE_DIR=/var/lib/redmine/files
+#バックアップ元(redmineのコンフィグディレクトリ)
+REDMINE_CONFIG_DIR=/var/lib/redmine/config
+
+#時間の文字列：yyyy-mm-dd_hh:mm:ss
+#現在の時間を取得
+DATE_DIR=$(date +%Y-%m-%d_%H-%M-%S)
+
+#フォルダを作成：[daily|weekly|monthly]
+DAILY_DIR=$BACKUP_DIR/daily
+WEEKLY_DIR=$BACKUP_DIR/weekly
+MONTHLY_DIR=$BACKUP_DIR/monthly
+
+#データベースの設定
+DB_NAME=redmine
+DB_USER=redmine
+DB_PASS=testpassword
+DB_HOST=localhost
+
+#ローテーションの設定
+#daily（日次）バックアップのローテーション(世代数)
+DAILY_ROTATE=8
+#weekly（週次）バックアップのローテーション（世代数）
+WEEKLY_ROTATE=5
+#monthly（月次）バックアップのローテーション（世代数）
+MONTHLY_ROTATE=6
+
+
+# ###################################################################################
+#　関数
+# ###################################################################################
+#フォルダ作成の関数
+# $1: フォルダpath
+#戻り値: フォルダ作成成功時は0、失敗時は1
+make_dir() {
+    mkdir -p $1
+    if [ $? -ne 0 ]; then
+        echo "フォルダの作成に失敗しました: $1"
+        exit 1
+    fi
+    echo "フォルダを作成しました: $1" 
+    return 0
+}
+
+#バックアップ元のコピー
+#$1: コピー元ディレクトリ
+#$2: コピー先ディレクトリ
+#戻り値: コピー成功時は0、失敗時は1
+copy_files() {
+    # $1: コピー元ディレクトリ
+    local SOURCE_DIR="$1"
+    # $2: コピー先ディレクトリ
+    local DEST_DIR="$2"
+    #　コピー先にディレクトリをコピー
+    #　--preserve=ownershipオプションを使用して、所有権を保持
+    #　--recursiveオプションを使用して、ディレクトリを再帰的にコピー
+    #　--preserve=modeオプションを使用して、パーミッションを保持
+    cp -rp --preserve=ownership $SOURCE_DIR $DEST_DIR
+    if [ $? -ne 0 ]; then
+        echo "バックアップのコピーに失敗しました: $SOURCE_DIR"
+        exit 1
+    fi
+    echo "バックアップをコピーしました: $SOURCE_DIR -> $DEST_DIR"
+    return 0
+}
+
+#pg_dumpの実行関数
+#$1: バックアップ先ディレクトリ
+dump() {
+    local FILE_NAME=db_dump
+    export PGPASSWORD=$DB_PASS
+    trap 'unset PGPASSWORD' RETURN
+
+    pg_dump -U "$DB_USER" -h "$DB_HOST" "$DB_NAME" > "$1/$FILE_NAME"
+    if [ $? -ne 0 ]; then
+        echo "データベースのバックアップに失敗しました: $1" >&2
+        return 1
+    fi
+
+    echo "pg_dumpを実行しました: $1"
+    return 0
+}
+
+#PGPASSWORD='$DB_PASS' pg_dump -U $DB_USER -h $DB_HOST $DB_NAME > redmine_backup.sql
+
+#圧縮してtar.gzに置き換える関数
+#$1: バックアップ先ディレクトリ
+#$2: バックアップファイル名
+commpress() {
+    tar -czPf $1/$2.tar.gz $1/$2
+    if [ $? -ne 0 ]; then
+        echo "圧縮に失敗しました: $1/$2" >&2
+        return 1
+    fi
+    echo "圧縮しました: $1/$2"
+    rm -rf $1/$2
+    chmod 700 $1/$2.tar.gz
+    return 0
+}
+
+
+#バックアップのメイン処理
+#$1: バックアップ先ディレクトリ
+#$2: バックアップファイル名
+backup() {
+    local TARGET_DIR=$1
+    make_dir "$TARGET_DIR"
+    #所有者をwww-dataに変更
+    local DATE_DIR=$2
+    make_dir "$TARGET_DIR/$DATE_DIR/files"
+    chown -R www-data:www-data $TARGET_DIR/$DATE_DIR/files
+    copy_files "$REDMINE_FILE_DIR" "$TARGET_DIR/$DATE_DIR/files"
+    copy_files "$REDMINE_CONFIG_DIR" "$TARGET_DIR/$DATE_DIR"
+    dump "$TARGET_DIR/$DATE_DIR"
+    commpress "$TARGET_DIR" "$DATE_DIR"
+}
+
+
+
+
+# ##################################################################################
+#　ローテーション処理
+# ##################################################################################
+
+# ローテーション処理
+rotate() {
+    local TARGET_DIR=$1
+    local ROTATE=$2
+    local FILES=($(ls -t $TARGET_DIR/*.tar.gz))
+    local COUNT=${#FILES[@]}
+
+    if [ $COUNT -gt $ROTATE ]; then
+        for ((i=$ROTATE; i<$COUNT; i++)); do
+            rm -f "${FILES[$i]}"
+            echo "ローテーション: ${FILES[$i]}を削除しました"
+        done
+    fi
+}
+# ローテーション処理の実行
+
+
+
+
+
+
+# ###################################################################################
+#　メイン処理
+# ###################################################################################
+
+#引数の解析
+while getopts "dwmrh" opt; do
+    case $opt in
+        d) # Dailyバックアップ
+            echo "Dailyバックアップを開始します"
+            backup "$DAILY_DIR" "$DATE_DIR"
+            rotate "$DAILY_DIR" "$DAILY_ROTATE"
+            ;;
+        w) # Weeklyバックアップ
+            echo "Weeklyバックアップを開始します"
+            backup "$WEEKLY_DIR" "$DATE_DIR"
+            rotate "$WEEKLY_DIR" "$WEEKLY_ROTATE"
+            ;;
+        m) # Monthlyバックアップ
+            echo "Monthlyバックアップを開始します"
+            backup "$MONTHLY_DIR" "$DATE_DIR"
+            rotate "$MONTHLY_DIR" "$MONTHLY_ROTATE"
+            ;;
+        r) # バックアップファイルのローテーション
+            echo "バックアップファイルのローテーションを開始します"
+            ;;
+        h) # ヘルプ
+            echo "オプション: [-d:daily backup]"
+            echo "　　　　　　[-w:weekly backup]"
+            echo "　　　　　　[-m:monthly backup]"
+            echo "　　　　　　[-r:rotetion]"
+            echo "　　　　　　[-h:help]"
+            exit 0
+            ;;
+        \?) # 無効なオプション
+            echo "無効なオプションです: -$OPTARG" >&2
+            echo "-h: ヘルプを参照してください。"
+            exit 1
+            ;;
+    esac
+done
