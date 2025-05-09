@@ -196,6 +196,9 @@ while getopts "dwmrh" opt; do
             ;;
         r) # バックアップファイルのローテーション
             echo "バックアップファイルのローテーションを開始します"
+            rotate "$DAILY_DIR" "$DAILY_ROTATE"
+            rotate "$WEEKLY_DIR" "$WEEKLY_ROTATE"
+            rotate "$MONTHLY_DIR" "$MONTHLY_ROTATE"
             ;;
         h) # ヘルプ
             echo "オプション: [-d:daily backup]"
