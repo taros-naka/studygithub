@@ -138,9 +138,9 @@ commpress() {
 backup() {
     local TARGET_DIR=$1
     make_dir "$TARGET_DIR"
-    #所有者をwww-dataに変更
     local DATE_DIR=$2
     make_dir "$TARGET_DIR/$DATE_DIR/files"
+    #所有者をwww-dataに変更
     chown -R www-data:www-data $TARGET_DIR/$DATE_DIR/files
     copy_files "$REDMINE_FILE_DIR" "$TARGET_DIR/$DATE_DIR/files"
     copy_files "$REDMINE_CONFIG_DIR" "$TARGET_DIR/$DATE_DIR"
