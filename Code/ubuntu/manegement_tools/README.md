@@ -1,14 +1,18 @@
-    コマンドの作成
 １　lgop：logoutput
     このシェルスクリプトは、ログファイル作成するためのコマンドとして使用される。
     ログファイルは、指定されたディレクトリに作成され、ログメッセージが追加される。
     ログファイルの名前は、指定されたプレフィックスと現在の日付を組み合わせたものになる。
     ログメッセージは、標準出力とエラーメッセージの両方に出力される。
-    使用方法：
-    lgop [-INFO|WARN|ERRR|DEBU|CRIT|ALRT|SUCC|----] [メッセージ]  
-    出力先：/var/log/application.log
-    出力：[2025-05-11_18:01:44] - INFO - test1
+    入出力：
+    - lgop [-INFO|WARN|ERRR|DEBU|CRIT|ALRT|SUCC|----] [メッセージ]  
+    - 出力先：/var/log/application.log
+    - 出力：[2025-05-11_18:01:44] - INFO - test1
     
+    使用方法：
+    （１）変数定義を編集
+    （２）burmのファイルを/usr/local/bin/へ保存
+    （３）権限を+x
+
     今後の機能追加：
     - ログファイルのローテーション機能 
     - ログレベルの指定機能
@@ -26,5 +30,5 @@
     burm [-d:daily backup|-w:weekly backup|-m:monthly backup|-r:backup rotetion|-h:options help]
     （１）変数定義を編集
     （２）burmのファイルを/usr/local/bin/へ保存
-    （３）権限を+x
+    （３）権限を 700
     その後コマンドとして使用可能
