@@ -1,11 +1,10 @@
 #!/bin/bash
-#　ファイル名: Log_out.sh
-#　Ubuntu 24.04 LTS
+#　ファイル名: lgop
 #  input:log_out.sh "message" "category" "subject" "body"
 #　outputLOG:[timestamp] - [category] -"message"
 #　メール送信：空メール不可、件名と本文なければ送信しない
 # category: [INFO|WARN|ERRR|DEBU|CRIT|ALRT|SUCC|----]
-
+#  lgopコマンドとして使用
 #　root権限で実行することを確認
 [[ $EUID -eq 0 ]] || { echo "root で実行してください"; exit 1; }
 
@@ -61,25 +60,7 @@ send_mail() {
 # メインメソッド
 # #############################################################################
 
-#　メール送信
-#　$3及び$4が空の場合はスキップ
-#if [ -z "$MAIL_SUBJECT" ] && [ -z "$MAIL_BODY" ]; then
-#　$3及び$4が空ではない場合、メール送信する
 
-#elif [ -n "$MAIL_SUBJECT" ] && [ -n "$MAIL_BODY" ]; then
-#    send_mail "$MAIL_SUBJECT" "$MAIL_BODY"
-
-#　$3または$4が空の場合、エラーメッセージを送信
-#elif [ -z "$MAIL_SUBJECT" ] || [ -z "$MAIL_BODY" ]; then
-#    send_mail "メッセージエラー: 件名または本文が空です。" "Subject: $MAIL_SUBJECT, Body: $MAIL_BODY"
-
-#fi
-
-#　ログメッセージを生成してファイルに書き込む
-#　$2が空の場合、ログメッセージを生成しない
-#if [ -z "$CATEGORY" ]; then
-#    exit 1
-#fi
 
 
 log_message "$MESSAGE" "$CATEGORY"
