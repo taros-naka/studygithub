@@ -1,8 +1,7 @@
 #!/bin/bash
-#ファイル名: redmine_backup.sh
+#ファイル名: burm
 #作成日: 2025
-#作成内容: redmineのバックアップスクリプト
-#redmineバックアップスクリプト
+#作成内容: redmineのバックアップシェルスクリプト
 #説明：Redmineのfiles、config、DBをバックアップするスクリプト
 #　　　daily、weekly、monthlyのバックアップを取得する
 #options:
@@ -11,9 +10,14 @@
 #　　-m : Monthlyバックアップ|
 #　　-r : バックアップファイルのローテーション|
 #　　-h : ヘルプ]
-#/usr/binにて実行すること
-#実行例：/usr/bin/redmine_backup.sh -d
-#または　redmine_backup -d
+#/usr/binに保存
+#実行例：burm -d
+##注意点：pg_dumpの実行には、PostgreSQLのユーザー名とパスワードが必要
+#crontab -eに登録する場合は、以下のように記述例
+#　　0 0 * * * /usr/bin/burm -d
+#　　0 0 * * 0 /usr/bin/burm -w
+#　　0 0 1 * * /usr/bin/burm -m
+
 
 #注意点：filesディレクトリがコピーできないバグが発生しているので個別でmkdirしている
 
@@ -36,7 +40,7 @@ REDMINE_CONFIG_DIR=/var/lib/redmine/config
 #現在の時間を取得
 DATE_DIR=$(date +%Y-%m-%d_%H-%M-%S)
 
-#フォルダを作成：[daily|weekly|monthly]
+#フォルダを定義：[daily|weekly|monthly]
 DAILY_DIR=$BACKUP_DIR/daily
 WEEKLY_DIR=$BACKUP_DIR/weekly
 MONTHLY_DIR=$BACKUP_DIR/monthly
@@ -171,7 +175,6 @@ rotate() {
         done
     fi
 }
-# ローテーション処理の実行
 
 
 
