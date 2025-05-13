@@ -178,10 +178,10 @@ EOF
 #IPV6の無効化
 sudo sed -i "s|IPV6=yes|IPV6=no|" "/etc/default/ufw"
 # UFWの初期化
-sudo ufw disable -y
-sudo ufw enable
 # apacheのポートを開放
 sudo ufw allow apache
+sudo ufw disable -y
+sudo ufw enable
 # apacheの更新
 sudo ufw reload
 
