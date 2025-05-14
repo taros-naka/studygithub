@@ -104,11 +104,12 @@ copy_files() {
 #pg_dumpの実行関数
 #$1: バックアップ先ディレクトリ
 dump() {
-    local FILE_NAME=db_dump
+    local FILE_NAME=db_dump.sqlc
     export PGPASSWORD=$DB_PASS
     trap 'unset PGPASSWORD' RETURN
 
-    pg_dump -U "$DB_USER" -h "$DB_HOST" "$DB_NAME" > "$1/$FILE_NAME"
+    #pg_dump -U "$DB_USER" -h "$DB_HOST" "$DB_NAME" > "$1/$FILE_NAME"
+    pg_dump -U "$DB_USER" -h "$DB_HOST" -Fc --file="$1/$FILE_NAME" "$DB_NAME"
     if [ $? -ne 0 ]; then
         echo "データベースのバックアップに失敗しました: $1" >&2
         return 1
@@ -117,9 +118,11 @@ dump() {
     echo "pg_dumpを実行しました: $1"
     return 0
 }
-
 #メモ
-#PGPASSWORD='$DB_PASS' pg_dump -U $DB_USER -h $DB_HOST $DB_NAME > redmine_backup.sql
+# 圧縮形式で保存する場合
+# リストア時、DBを初期化する場合
+#pg_dump -U PostgreSQLユーザー名 -h ホスト名 -Fc --file=ダンプデータファイル名 Redmineデータベース名
+#PGPASSWORD='$DB_PASS' pg_restore -h データベースサーバのIPアドレス -U データベースのユーザー名 -d データベース名 --clean --if-exists --no-owner xxxxxxxx.sqlc
 
 
 #圧縮してtar.gzに置き換える関数
@@ -182,7 +185,7 @@ rotate() {
 #　メイン処理
 # ###################################################################################
 #引数の解析
-while getopts "dwmrh" opt; do
+while getopts "dwmrhc" opt; do
     case $opt in
         d) # Dailyバックアップ
             echo "Dailyバックアップを開始します"
@@ -213,6 +216,17 @@ while getopts "dwmrh" opt; do
             echo "　　　　　　[-h:help]"
             exit 0
             ;;
+        c) # backupの全削除
+            read -p "本当に削除しますか？(y/n): " confirm
+            if [[ $confirm == "y" || $confirm == "Y" ]]; then
+                rm -rf $BACKUP_DIR
+                echo "バックアップディレクトリを削除しました"
+            else
+                echo "バックアップの削除をキャンセルしました"
+            fi
+            exit 1
+            ;;
+
         \?) # 無効なオプション
             echo "無効なオプションです: -$OPTARG" >&2
             echo "-h: ヘルプを参照してください。"
@@ -220,3 +234,4 @@ while getopts "dwmrh" opt; do
             ;;
     esac
 done
+#pg_restore -h $DB_HOST -U $DB_USER -d $DB_NAME --clean --if-exists --no-owner xxxxxxxx.sqlc
