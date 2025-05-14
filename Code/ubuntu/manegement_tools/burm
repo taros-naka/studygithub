@@ -48,7 +48,7 @@ MONTHLY_DIR=$BACKUP_DIR/monthly
 #データベースの設定
 DB_NAME=redmine
 DB_USER=redmine
-DB_PASS=testpassword
+DB_PASS=testpass
 DB_HOST=localhost
 
 #ローテーションの設定
@@ -178,6 +178,18 @@ rotate() {
         done
     fi
 }
+# ########################################################################################
+#　restore処理
+# ########################################################################################
+
+#解凍前のフォルダ作成
+restore() {
+    local TARGET_DIR=$BACKUP_DIR
+    make_dir "$TARGET_DIR"
+    make_dir "$TARGET_DIR/restore"
+    #所有者をwww-dataに変更
+    chown -R www-data:www-data $TARGET_DIR/files
+}
 
 
 
@@ -235,3 +247,4 @@ while getopts "dwmrhc" opt; do
     esac
 done
 #pg_restore -h $DB_HOST -U $DB_USER -d $DB_NAME --clean --if-exists --no-owner xxxxxxxx.sqlc
+
