@@ -72,8 +72,7 @@ make_dir() {
     if [ $? -ne 0 ]; then
         echo "フォルダの作成に失敗しました: $1"
         exit 1
-    fi
-    echo "フォルダを作成しました: $1" 
+    fi 
     return 0
 }
 
@@ -104,7 +103,7 @@ copy_files() {
 #pg_dumpの実行関数
 #$1: バックアップ先ディレクトリ
 dump() {
-    local FILE_NAME=db_dump.sqlc
+    local FILE_NAME="db_dump.sqlc"
     export PGPASSWORD=$DB_PASS
     trap 'unset PGPASSWORD' RETURN
 
@@ -129,14 +128,18 @@ dump() {
 #$1: バックアップ先ディレクトリ
 #$2: バックアップファイル名
 commpress() {
-    tar -czPf $1/$2.tar.gz $1/$2
+    local TARGET_DIR=$1
+    local FILE_NAME=$2
+    cd $TARGET_DIR
+    tar -czPf $FILE_NAME.tar.gz $FILE_NAME
     if [ $? -ne 0 ]; then
-        echo "圧縮に失敗しました: $1/$2" >&2
+        echo "圧縮に失敗しました: $TARGET_DIR/$FILE_NAME" >&2
         return 1
     fi
-    echo "圧縮しました: $1/$2"
-    rm -rf $1/$2
-    chmod 700 $1/$2.tar.gz
+    echo "圧縮しました: $TARGET_DIR/$FILE_NAME"
+    rm -rf $TARGET_DIR/$FILE_NAME
+    chmod 700 $TARGET_DIR/$FILE_NAME.tar.gz
+    cd ~
     return 0
 }
 
@@ -149,8 +152,7 @@ backup() {
     make_dir "$TARGET_DIR"
     local DATE_DIR=$2
     make_dir "$TARGET_DIR/$DATE_DIR/files"
-    #所有者をwww-dataに変更
-    chown -R www-data:www-data $TARGET_DIR/$DATE_DIR/files
+    chown -R www-data:www-data "$TARGET_DIR/$DATE_DIR/files"
     copy_files "$REDMINE_FILE_DIR" "$TARGET_DIR/$DATE_DIR/files"
     copy_files "$REDMINE_CONFIG_DIR" "$TARGET_DIR/$DATE_DIR"
     dump "$TARGET_DIR/$DATE_DIR"
@@ -181,15 +183,83 @@ rotate() {
 # ########################################################################################
 #　restore処理
 # ########################################################################################
+# リストア機能
 
-#解凍前のフォルダ作成
-restore() {
-    local TARGET_DIR=$BACKUP_DIR
+
+RESTOR_DIR=$BACKUP_DIR/restore_files
+
+
+#解凍処理
+decompress() {
+    local SOURCE_FILE=$DECOMP_SOURCE_FULL_PATH
+    local TARGET_DIR=$RESTOR_DIR
     make_dir "$TARGET_DIR"
-    make_dir "$TARGET_DIR/restore"
-    #所有者をwww-dataに変更
-    chown -R www-data:www-data $TARGET_DIR/files
+    EXTRACTED_FOLDER=$(tar -tzf "$SOURCE_FILE" -C "$TARGET_DIR" | head -1 | cut -d'/' -f1)
+    tar -xzvf "$SOURCE_FILE" -C "$TARGET_DIR"
+    if [ $? -ne 0 ]; then
+        echo "解凍に失敗しました: $SOURCE_FILE" >&2
+        echo "処理を終了します"
+        exit 1
+    fi
+    echo "解凍しました: $EXTRACTED_FOLDER"
 }
+
+
+# postgresqlのリストア
+restore_db() {
+    local SOURCE_FILE=$1
+    export PGPASSWORD=$DB_PASS
+    trap 'unset PGPASSWORD' RETURN
+    #データベースを初期化
+    sudo -u postgres psql -c "DROP DATABASE IF EXISTS $DB_NAME;"
+    sudo -u postgres psql -c "CREATE DATABASE $DB_NAME"
+    sudo -u postgres psql -c "DROP ROLE IF EXISTS $DB_USER;"
+    sudo -u postgres psql -c "CREATE ROLE $DB_USER WITH LOGIN PASSWORD '$DB_PASS';"
+    #pg_restore -h $DB_HOST -U $DB_USER -d $DB_NAME --clean --if-exists --no-owner $SOURCE_FILE
+    pg_restore -h $DB_HOST -U $DB_USER -d $DB_NAME --clean --if-exists --no-owner $SOURCE_FILE
+    if [ $? -ne 0 ]; then
+        echo "データベースのリストアに失敗しました: $SOURCE_FILE" >&2
+        return 1
+    fi
+
+    echo "データベースのリストアを完了しました: $SOURCE_FILE"
+    return 0
+}
+
+
+#リストア処理
+restore() {
+    decompress
+    # filesディレクトリが存在しない場合は作成
+    if [ ! -d $REDMINE_FILE_DIR ]; then
+        make_dir "$REDMINE_FILE_DIR"
+        #所有者をwww-dataに変更
+        chown -R www-data:www-data $REDMINE_FILE_DIR
+        #パーミッションを変更
+        chmod 775 $REDMINE_FILE_DIR
+    fi
+    # filesの復元
+    cp -ar $RESTOR_DIR/$EXTRACTED_FOLDER/files $REDMINE_FILE_DIR
+    if [ $? -ne 0 ]; then
+        echo "filesの復元に失敗しました: $SOURCE_FILE" >&2
+        return 1
+    fi
+    # configの復元
+    cp -ar $RESTOR_DIR/$EXTRACTED_FOLDER/config $REDMINE_CONFIG_DIR
+    if [ $? -ne 0 ]; then
+        echo "configの復元に失敗しました: $SOURCE_FILE" >&2
+        return 1
+    fi
+    #DBの復元
+    echo "$RESTOR_DIR/$EXTRACTED_FOLDER/db_dump.sqlc"
+    restore_db $RESTOR_DIR/$EXTRACTED_FOLDER/db_dump.sqlc
+    if [ $? -ne 0 ]; then
+        echo "データベースのリストアに失敗しました: $SOURCE_FILE" >&2
+        return 1
+    fi
+    echo "バックアップをリストアしました: $SOURCE_DIR -> $TARGET_DIR"
+}
+
 
 
 
@@ -197,7 +267,7 @@ restore() {
 #　メイン処理
 # ###################################################################################
 #引数の解析
-while getopts "dwmrhc" opt; do
+while getopts "dwmrhcu" opt; do
     case $opt in
         d) # Dailyバックアップ
             echo "Dailyバックアップを開始します"
@@ -226,6 +296,8 @@ while getopts "dwmrhc" opt; do
             echo "　　　　　　[-m:monthly backup]"
             echo "　　　　　　[-r:rotetion]"
             echo "　　　　　　[-h:help]"
+            echo "　　　　　　[-c:backup delete]"
+            echo "　　　　　　[-u:restore]"
             exit 0
             ;;
         c) # backupの全削除
@@ -238,7 +310,21 @@ while getopts "dwmrhc" opt; do
             fi
             exit 1
             ;;
-
+        u) # restore
+            DECOMP_SOURCE_FULL_PATH=$(readlink -f "$2")
+            echo "$2"
+            echo "指定されたファイル：$DECOMP_SOURCE_FULL_PATH"
+            read -p "リストアを実行して、中断した場合データベースが破損することがあります。\実行しますか？(y/n): " confirm
+            if [[ $confirm == "y" || $confirm == "Y" ]]; then
+                
+                restore
+                echo "リストアを実行しました。"
+                exit 0
+            else
+                echo "リストアをキャンセルしました"
+                exit 1
+            fi
+            ;;
         \?) # 無効なオプション
             echo "無効なオプションです: -$OPTARG" >&2
             echo "-h: ヘルプを参照してください。"
