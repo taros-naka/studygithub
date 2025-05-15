@@ -1,4 +1,5 @@
 #!/bin/bash
+
 # Redmineのインストール
 # 参考URL：https://blog.redmine.jp/articles/6_0/install/ubuntu24/
 # 
@@ -9,10 +10,9 @@
 #       sudo apt update
 #       sudo apt upgrade -y
 #       以上の操作後は、必ず再起動してください。
-# ###################################################################################
+
 # ###################################################################################
 # 定　義
-# ###################################################################################
 # ###################################################################################
 #　url:https://www.ruby-lang.org/ja/downloads/
 RUBY_VERSION="ruby-3.3.8"
@@ -148,9 +148,7 @@ SNIPPET=$(passenger-install-apache2-module --snippet)
 sudo tee /etc/apache2/conf-available/redmine.conf > /dev/null <<EOF
 # Redmineの画像ファイル・CSSファイル等へのアクセスを許可する設定。
 # Apache 2.4のデフォルトではサーバ上の全ファイルへのアクセスが禁止されている。
-<Directory "/var/lib/redmine/public">
-  Require all granted
-</Directory>
+
 
 # Passengerの基本設定。
 # passenger-install-apache2-module --snippet で表示された設定を記述。
@@ -168,33 +166,29 @@ PassengerStatThrottleRate 10
 
 # Redmineのインストールディレクトリへのアクセスを許可
 <Directory /var/lib/redmine/public>
-    Options -MultiViews -Indexes
     Require ip ${SUBNET}
+    Options -MultiViews -Indexes
     #AllowOverride all
-    #require all granted
+    #Require all granted
 </Directory>
 EOF
-# Apacheのコンフィグ設定
-# 000-default.confの設定を変更
-# documentrootの設定 DocumentRoot /var/www/html → DocumentRoot /var/lib/redmine/public
-sudo sed -i "s|^\s*DocumentRoot .*|        DocumentRoot "/var/lib/redmine/public"|" "/etc/apache2/sites-enabled/000-default.conf"
-#　アクセス許可のサブネットの設定
-# ドメインの設定
-sudo sed -i "s|^\s*#ServerAdmin .*|        ServerAdmin ${SERVER_ADMIN}|" "/etc/apache2/sites-enabled/000-default.conf"
-# ドメインの設定
-sudo sed -i "s|^\s*#ServerName .*|        ServerName ${WEB_DOMAIN}|" "/etc/apache2/sites-enabled/000-default.conf"
-#　Apacheの設定を有効化
 
 # apacheのファイアーウォールの設定
 #　アパッチのサービスポートを開放
 #IPV6の無効化
 sudo sed -i "s|IPV6=yes|IPV6=no|" "/etc/default/ufw"
-# UFWの初期化
 # apacheのポートを開放
 sudo ufw allow apache
-sudo ufw enable
 # apacheの更新
 sudo ufw reload
+
+# Apacheのコンフィグ設定
+# 000-default.confの設定を変更
+#　アクセス許可のサブネットの設定
+# ドメインの設定
+sudo sed -i "s|^\s*#ServerAdmin .*|        ServerAdmin ${SERVER_ADMIN}|" "/etc/apache2/sites-enabled/000-default.conf"
+# ドメインの設定
+sudo sed -i "s|^\s*#ServerName .*|        ServerName ${WEB_DOMAIN}|" "/etc/apache2/sites-enabled/000-default.conf"
 #　Apacheの設定を有効化
 sudo a2enconf redmine
 #　Apacheの設定を確認
