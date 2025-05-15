@@ -1,0 +1,336 @@
+#!/bin/bash
+#ファイル名: burm
+#作成日: 2025
+#作成内容: redmineのバックアップシェルスクリプト
+#説明：Redmineのfiles、config、DBをバックアップするスクリプト
+#　　　daily、weekly、monthlyのバックアップを取得する
+#options:
+#　　[-d : Dailyバックアップ|
+#　　-w : Weeklyバックアップ|
+#　　-m : Monthlyバックアップ|
+#　　-r : バックアップファイルのローテーション|
+#　　-h : ヘルプ]
+#/usr/binに保存
+#実行例：burm -d
+##注意点：pg_dumpの実行には、PostgreSQLのユーザー名とパスワードが必要
+#crontab -eに登録する場合は、以下のように記述例
+#　　0 0 * * * /usr/bin/burm -d
+#　　0 0 * * 0 /usr/bin/burm -w
+#　　0 0 1 * * /usr/bin/burm -m
+
+
+#注意点：filesディレクトリがコピーできないバグが発生しているので個別でmkdirしている
+
+#　root権限で実行することを確認
+[[ $EUID -eq 0 ]] || { echo "root で実行してください"; exit 1; }
+
+
+
+# ###################################################################################
+# 変数定義
+# ###################################################################################
+#バックアップ先親ディレクトリ
+BACKUP_DIR=/var/backups/redmine
+#バックアップ元(redmineのファイルズディレクトリ)
+REDMINE_FILE_DIR=/var/lib/redmine/files
+#バックアップ元(redmineのコンフィグディレクトリ)
+REDMINE_CONFIG_DIR=/var/lib/redmine/config
+
+#時間の文字列：yyyy-mm-dd_hh:mm:ss
+#現在の時間を取得
+DATE_DIR=$(date +%Y-%m-%d_%H-%M-%S)
+
+#フォルダを定義：[daily|weekly|monthly]
+DAILY_DIR=$BACKUP_DIR/daily
+WEEKLY_DIR=$BACKUP_DIR/weekly
+MONTHLY_DIR=$BACKUP_DIR/monthly
+
+#データベースの設定
+DB_NAME=redmine
+DB_USER=redmine
+DB_PASS=testpass
+DB_HOST=localhost
+
+#ローテーションの設定
+#daily（日次）バックアップのローテーション(世代数)
+DAILY_ROTATE=8
+#weekly（週次）バックアップのローテーション（世代数）
+WEEKLY_ROTATE=5
+#monthly（月次）バックアップのローテーション（世代数）
+MONTHLY_ROTATE=6
+
+
+
+# ###################################################################################
+#　関数
+# ###################################################################################
+#フォルダ作成の関数
+# $1: フォルダpath
+#戻り値: フォルダ作成成功時は0、失敗時は1
+make_dir() {
+    mkdir -p $1
+    if [ $? -ne 0 ]; then
+        echo "フォルダの作成に失敗しました: $1"
+        exit 1
+    fi 
+    return 0
+}
+
+
+#バックアップ元のコピー
+#$1: コピー元ディレクトリ
+#$2: コピー先ディレクトリ
+#戻り値: コピー成功時は0、失敗時は1
+copy_files() {
+    # $1: コピー元ディレクトリ
+    local SOURCE_DIR="$1"
+    # $2: コピー先ディレクトリ
+    local DEST_DIR="$2"
+    #　コピー先にディレクトリをコピー
+    #　--preserve=ownershipオプションを使用して、所有権を保持
+    #　--recursiveオプションを使用して、ディレクトリを再帰的にコピー
+    #　--preserve=modeオプションを使用して、パーミッションを保持
+    cp -rp --preserve=ownership $SOURCE_DIR $DEST_DIR
+    if [ $? -ne 0 ]; then
+        echo "バックアップのコピーに失敗しました: $SOURCE_DIR"
+        exit 1
+    fi
+    echo "バックアップをコピーしました: $SOURCE_DIR -> $DEST_DIR"
+    return 0
+}
+
+
+#pg_dumpの実行関数
+#$1: バックアップ先ディレクトリ
+dump() {
+    local FILE_NAME="db_dump.sqlc"
+    export PGPASSWORD=$DB_PASS
+    trap 'unset PGPASSWORD' RETURN
+
+    #pg_dump -U "$DB_USER" -h "$DB_HOST" "$DB_NAME" > "$1/$FILE_NAME"
+    pg_dump -U "$DB_USER" -h "$DB_HOST" -Fc --file="$1/$FILE_NAME" "$DB_NAME"
+    if [ $? -ne 0 ]; then
+        echo "データベースのバックアップに失敗しました: $1" >&2
+        return 1
+    fi
+
+    echo "pg_dumpを実行しました: $1"
+    return 0
+}
+#メモ
+# 圧縮形式で保存する場合
+# リストア時、DBを初期化する場合
+#pg_dump -U PostgreSQLユーザー名 -h ホスト名 -Fc --file=ダンプデータファイル名 Redmineデータベース名
+#PGPASSWORD='$DB_PASS' pg_restore -h データベースサーバのIPアドレス -U データベースのユーザー名 -d データベース名 --clean --if-exists --no-owner xxxxxxxx.sqlc
+
+
+#圧縮してtar.gzに置き換える関数
+#$1: バックアップ先ディレクトリ
+#$2: バックアップファイル名
+commpress() {
+    local TARGET_DIR=$1
+    local FILE_NAME=$2
+    cd $TARGET_DIR
+    tar -czPf $FILE_NAME.tar.gz $FILE_NAME
+    if [ $? -ne 0 ]; then
+        echo "圧縮に失敗しました: $TARGET_DIR/$FILE_NAME" >&2
+        return 1
+    fi
+    echo "圧縮しました: $TARGET_DIR/$FILE_NAME"
+    rm -rf $TARGET_DIR/$FILE_NAME
+    chmod 700 $TARGET_DIR/$FILE_NAME.tar.gz
+    cd ~
+    return 0
+}
+
+
+#バックアップのメイン処理
+#$1: バックアップ先ディレクトリ
+#$2: バックアップファイル名
+backup() {
+    local TARGET_DIR=$1
+    make_dir "$TARGET_DIR"
+    local DATE_DIR=$2
+    make_dir "$TARGET_DIR/$DATE_DIR/files"
+    chown -R www-data:www-data "$TARGET_DIR/$DATE_DIR/files"
+    copy_files "$REDMINE_FILE_DIR" "$TARGET_DIR/$DATE_DIR/files"
+    copy_files "$REDMINE_CONFIG_DIR" "$TARGET_DIR/$DATE_DIR"
+    dump "$TARGET_DIR/$DATE_DIR"
+    commpress "$TARGET_DIR" "$DATE_DIR"
+}
+
+
+
+
+# ##################################################################################
+#　ローテーション処理
+# ##################################################################################
+
+# ローテーション処理
+rotate() {
+    local TARGET_DIR=$1
+    local ROTATE=$2
+    local FILES=($(ls -t $TARGET_DIR/*.tar.gz))
+    local COUNT=${#FILES[@]}
+
+    if [ $COUNT -gt $ROTATE ]; then
+        for ((i=$ROTATE; i<$COUNT; i++)); do
+            rm -f "${FILES[$i]}"
+            echo "ローテーション: ${FILES[$i]}を削除しました"
+        done
+    fi
+}
+# ########################################################################################
+#　restore処理
+# ########################################################################################
+# リストア機能
+
+
+RESTOR_DIR=$BACKUP_DIR/restore_files
+
+
+#解凍処理
+decompress() {
+    local SOURCE_FILE=$DECOMP_SOURCE_FULL_PATH
+    local TARGET_DIR=$RESTOR_DIR
+    make_dir "$TARGET_DIR"
+    EXTRACTED_FOLDER=$(tar -tzf "$SOURCE_FILE" -C "$TARGET_DIR" | head -1 | cut -d'/' -f1)
+    tar -xzvf "$SOURCE_FILE" -C "$TARGET_DIR"
+    if [ $? -ne 0 ]; then
+        echo "解凍に失敗しました: $SOURCE_FILE" >&2
+        echo "処理を終了します"
+        exit 1
+    fi
+    echo "解凍しました: $EXTRACTED_FOLDER"
+}
+
+
+# postgresqlのリストア
+restore_db() {
+    local SOURCE_FILE=$1
+    export PGPASSWORD=$DB_PASS
+    trap 'unset PGPASSWORD' RETURN
+    #データベースを初期化
+    sudo -u postgres psql -c "DROP DATABASE IF EXISTS $DB_NAME;"
+    sudo -u postgres psql -c "CREATE DATABASE $DB_NAME"
+    sudo -u postgres psql -c "DROP ROLE IF EXISTS $DB_USER;"
+    sudo -u postgres psql -c "CREATE ROLE $DB_USER WITH LOGIN PASSWORD '$DB_PASS';"
+    #pg_restore -h $DB_HOST -U $DB_USER -d $DB_NAME --clean --if-exists --no-owner $SOURCE_FILE
+    pg_restore -h $DB_HOST -U $DB_USER -d $DB_NAME --clean --if-exists --no-owner $SOURCE_FILE
+    if [ $? -ne 0 ]; then
+        echo "データベースのリストアに失敗しました: $SOURCE_FILE" >&2
+        return 1
+    fi
+
+    echo "データベースのリストアを完了しました: $SOURCE_FILE"
+    return 0
+}
+
+
+#リストア処理
+restore() {
+    decompress
+    # filesディレクトリが存在しない場合は作成
+    if [ ! -d $REDMINE_FILE_DIR ]; then
+        make_dir "$REDMINE_FILE_DIR"
+        #所有者をwww-dataに変更
+        chown -R www-data:www-data $REDMINE_FILE_DIR
+        #パーミッションを変更
+        chmod 775 $REDMINE_FILE_DIR
+    fi
+    # filesの復元
+    cp -ar $RESTOR_DIR/$EXTRACTED_FOLDER/files $REDMINE_FILE_DIR
+    if [ $? -ne 0 ]; then
+        echo "filesの復元に失敗しました: $SOURCE_FILE" >&2
+        return 1
+    fi
+    # configの復元
+    cp -ar $RESTOR_DIR/$EXTRACTED_FOLDER/config $REDMINE_CONFIG_DIR
+    if [ $? -ne 0 ]; then
+        echo "configの復元に失敗しました: $SOURCE_FILE" >&2
+        return 1
+    fi
+    #DBの復元
+    echo "$RESTOR_DIR/$EXTRACTED_FOLDER/db_dump.sqlc"
+    restore_db $RESTOR_DIR/$EXTRACTED_FOLDER/db_dump.sqlc
+    if [ $? -ne 0 ]; then
+        echo "データベースのリストアに失敗しました: $SOURCE_FILE" >&2
+        return 1
+    fi
+    echo "バックアップをリストアしました: $SOURCE_DIR -> $TARGET_DIR"
+}
+
+
+
+
+# ###################################################################################
+#　メイン処理
+# ###################################################################################
+#引数の解析
+while getopts "dwmrhcu" opt; do
+    case $opt in
+        d) # Dailyバックアップ
+            echo "Dailyバックアップを開始します"
+            backup "$DAILY_DIR" "$DATE_DIR"
+            rotate "$DAILY_DIR" "$DAILY_ROTATE"
+            ;;
+        w) # Weeklyバックアップ
+            echo "Weeklyバックアップを開始します"
+            backup "$WEEKLY_DIR" "$DATE_DIR"
+            rotate "$WEEKLY_DIR" "$WEEKLY_ROTATE"
+            ;;
+        m) # Monthlyバックアップ
+            echo "Monthlyバックアップを開始します"
+            backup "$MONTHLY_DIR" "$DATE_DIR"
+            rotate "$MONTHLY_DIR" "$MONTHLY_ROTATE"
+            ;;
+        r) # バックアップファイルのローテーション
+            echo "バックアップファイルのローテーションを開始します"
+            rotate "$DAILY_DIR" "$DAILY_ROTATE"
+            rotate "$WEEKLY_DIR" "$WEEKLY_ROTATE"
+            rotate "$MONTHLY_DIR" "$MONTHLY_ROTATE"
+            ;;
+        h) # ヘルプ
+            echo "オプション: [-d:daily backup]"
+            echo "　　　　　　[-w:weekly backup]"
+            echo "　　　　　　[-m:monthly backup]"
+            echo "　　　　　　[-r:rotetion]"
+            echo "　　　　　　[-h:help]"
+            echo "　　　　　　[-c:backup delete]"
+            echo "　　　　　　[-u:restore]"
+            exit 0
+            ;;
+        c) # backupの全削除
+            read -p "本当に削除しますか？(y/n): " confirm
+            if [[ $confirm == "y" || $confirm == "Y" ]]; then
+                rm -rf $BACKUP_DIR
+                echo "バックアップディレクトリを削除しました"
+            else
+                echo "バックアップの削除をキャンセルしました"
+            fi
+            exit 1
+            ;;
+        u) # restore
+            DECOMP_SOURCE_FULL_PATH=$(readlink -f "$2")
+            echo "$2"
+            echo "指定されたファイル：$DECOMP_SOURCE_FULL_PATH"
+            read -p "リストアを実行して、中断した場合データベースが破損することがあります。\実行しますか？(y/n): " confirm
+            if [[ $confirm == "y" || $confirm == "Y" ]]; then
+                
+                restore
+                echo "リストアを実行しました。"
+                exit 0
+            else
+                echo "リストアをキャンセルしました"
+                exit 1
+            fi
+            ;;
+        \?) # 無効なオプション
+            echo "無効なオプションです: -$OPTARG" >&2
+            echo "-h: ヘルプを参照してください。"
+            exit 1
+            ;;
+    esac
+done
+#pg_restore -h $DB_HOST -U $DB_USER -d $DB_NAME --clean --if-exists --no-owner xxxxxxxx.sqlc
+
