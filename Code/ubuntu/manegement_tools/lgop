@@ -1,0 +1,63 @@
+#!/bin/bash
+#　ファイル名: lgop
+#  input:log_out.sh "message" "category" "subject" "body"
+#　outputLOG:[timestamp] - [category] -"message"
+#　メール送信：空メール不可、件名と本文なければ送信しない
+# category: [INFO|WARN|ERRR|DEBU|CRIT|ALRT|SUCC|----]
+#  lgopコマンドとして使用
+#　root権限で実行することを確認
+[[ $EUID -eq 0 ]] || { echo "root で実行してください"; exit 1; }
+
+# ログ出力用ファイルのパス
+LOG_FILE="/var/log/application.log"
+
+MESSAGE="$1"   # メッセージを第1引数に変更
+CATEGORY=$2  # カテゴリーを第2引数に変更
+
+# メール通知先
+MAIL_TO="test@test.com"
+MAIL_FROM="test2@test.com"
+MAIL_SUBJECT="$3"
+MAIL_BODY="$4"
+
+
+
+
+# #############################################################################
+# ログメッセージを生成してファイルに書き込む関数
+# #############################################################################
+# in:log_message_option "message" "category" 
+# out:"[timestamp]" - "[category]" - "message"
+log_message() {
+    # 引数からメッセージとカテゴリーを取得
+    local MESSAGE=$1
+    local CATEGORY=$2
+    local TIMESTAMP=$(date +"[%Y-%m-%d_%H:%M:%S]")
+    echo "$TIMESTAMP - $CATEGORY - $MESSAGE" >> $LOG_FILE
+
+}
+
+# #############################################################################
+# メール送信関数
+# #############################################################################
+# in:send_mail "subject" "body"
+# out:メール送信
+send_mail() {
+    local SUBJECT=$1
+    local BODY=$2
+    # メール送信コマンドを実行
+    (
+        echo "Subject: $SUBJECT"
+        echo "From: $MAIL_FROM"
+        echo "To: $MAIL_TO"
+        echo ""
+        echo "$BODY"
+    ) | sendmail -t
+}
+
+
+# #############################################################################
+# メインメソッド
+# #############################################################################
+
+log_message "$MESSAGE" "$CATEGORY"
