@@ -59,6 +59,10 @@ WEEKLY_ROTATE=5
 #monthly（月次）バックアップのローテーション（世代数）
 MONTHLY_ROTATE=6
 
+#バックアップファイルの取り扱いグループ
+CH_BACKUP_OWNER_GROUP=redmine:redmine
+#バックアップファイルのパーミッション
+CH_BACKUP_PERMISSION=777
 
 
 # ###################################################################################
@@ -129,7 +133,8 @@ dump() {
 #$1: バックアップ先ディレクトリ
 #$2: バックアップファイル名
 commpress() {
-    tar -czPf $1/$2.tar.gz $1/$2
+    cd $1
+    tar -czPf $2.tar.gz $2
     if [ $? -ne 0 ]; then
         echo "圧縮に失敗しました: $1/$2" >&2
         return 1
@@ -146,13 +151,18 @@ commpress() {
 #$2: バックアップファイル名
 backup() {
     local TARGET_DIR=$1
-    make_dir "$TARGET_DIR"
+    #make_dir "$TARGET_DIR"
+    
     local DATE_DIR=$2
-    make_dir "$TARGET_DIR/$DATE_DIR/files"
-    #所有者をwww-dataに変更
-    chown -R www-data:www-data $TARGET_DIR/$DATE_DIR/files
-    copy_files "$REDMINE_FILE_DIR" "$TARGET_DIR/$DATE_DIR/files"
+    make_dir "$TARGET_DIR/$DATE_DIR"
+    
+    # filesディレクトリのバックアップコピー
+    copy_files "$REDMINE_FILE_DIR" "$TARGET_DIR/$DATE_DIR"
+    
+    # configのディレクトリのバックアップコピー
     copy_files "$REDMINE_CONFIG_DIR" "$TARGET_DIR/$DATE_DIR"
+
+
     dump "$TARGET_DIR/$DATE_DIR"
     commpress "$TARGET_DIR" "$DATE_DIR"
 }
@@ -182,22 +192,76 @@ rotate() {
 #　restore処理
 # ########################################################################################
 
-#解凍前のフォルダ作成
-restore() {
-    local TARGET_DIR=$BACKUP_DIR
-    make_dir "$TARGET_DIR"
-    make_dir "$TARGET_DIR/restore"
-    #所有者をwww-dataに変更
-    chown -R www-data:www-data $TARGET_DIR/files
+decomp() {
+    #これは相対パス、絶対パスでも解凍できる関数
+    # $1: tar.gzファイルのパス（相対・絶対どちらでもOK）
+    local DECOMP_ABS_PATH=$(realpath $1)    # realpath: 絶対パスを取得
+    if [ ! -f "$DECOMP_ABS_PATH" ]; then
+        echo "tar.gzファイルが存在しません: $DECOMP_ABS_PATH" >&2
+        exit 1
+    fi
+    echo "フルパスOK：$DECOMP_ABS_PATH"
+
+    # $DECOMP_ABS_PATHからディレクトリ名とファイル名を取得
+    local DIR_NAME=$(dirname "$DECOMP_ABS_PATH")    # dirname: ディレクトリ名を取得
+    local FILE_NAME=$(basename "$DECOMP_ABS_PATH")  # basename: ファイル名を取得
+
+    #.tar.gzファイルか確認
+    # .tar.gzファイルでない場合は終了
+    if [[ ! $DECOMP_ABS_PATH =~ \.tar\.gz$ ]]; then
+        echo "tar.gzファイルではありません: $DECOMP_ABS_PATH" >&2
+        echo "解凍処理を実行できません" >&2
+        exit 1
+    fi
+    echo ".tar.gzファイルの有OK"
+    echo "ファイル名：$FILE_NAME"
+
+    # DIR_NAMEが存在するか確認
+    # DIR_NAMEが存在しない場合は終了
+    if [ ! -d "$DIR_NAME" ]; then
+        echo "圧縮ファイルの親ディレクトリが存在しません: $DIR_NAME" >&2
+        exit 1
+    fi
+    echo "親ディレクトリOK：$DIR_NAME"
+    echo "ファイル確認の整合OK：$DECOMP_ABS_PATH"
+
+    # $FILE_NAMEの圧縮ファイルから.tar.gzを削除
+    local DECOMPED_DIR_NAME=${FILE_NAME%.tar.gz}
+
+    mkdir -p /var/backups/redmine/restore
+    chmod $CH_BACKUP_PERMISSION /var/backups/redmine/restore
+    chown $CH_BACKUP_OWNER_GROUP /var/backups/redmine/restore
+    cp -a $DECOMP_ABS_PATH /var/backups/redmine/restore/$FILE_NAME
+    if [ $? -ne 0 ]; then
+        echo "ファイルのコピーに失敗しました: $DIR_NAME/$FILE_NAME" >&2
+        exit 1
+    fi
+    echo "ファイルコピー成功：$DIR_NAME/$FILE_NAME -> /var/backups/redmine/restore/$FILE_NAME"
+
+    #　コピーしてきたファイルを解凍して解凍したフォルダだけ残す
+    cd /var/backups/redmine/restore/
+    tar -xzf /var/backups/redmine/restore/$FILE_NAME
+    rm -f /var/backups/redmine/restore/$FILE_NAME
+    
+    #$DECOMPED_DIR_NAMEが存在するか確認
+    # $DECOMPED_DIR_NAMEが存在しない場合は終了
+    if [ ! -d "$DECOMPED_DIR_NAME" ]; then
+        echo "解凍先ディレクトリが存在しません: $DIR_NAME/$DECOMPED_DIR_NAME" >&2
+        exit 1
+    fi
+    echo "解凍先ディレクトリOK：$DIR_NAME/$FILE_NAME -> /var/backups/redmine/restore/$DECOMPED_DIR_NAME"
+    cd /
+    echo "=================解凍完了====================="
+    return 0
 }
-
-
+#memo
+#sudo dos2unix /home/user/burm || sudo chmod 777 /home/user/burm || /home/user/burm -d
 
 # ###################################################################################
 #　メイン処理
 # ###################################################################################
 #引数の解析
-while getopts "dwmrhc" opt; do
+while getopts "dwmrhcu" opt; do
     case $opt in
         d) # Dailyバックアップ
             echo "Dailyバックアップを開始します"
@@ -236,6 +300,20 @@ while getopts "dwmrhc" opt; do
             else
                 echo "バックアップの削除をキャンセルしました"
             fi
+            exit 1
+            ;;
+        u) # backupの全削除
+            echo "============バックアップのリストア============="
+            read -p "リストアを実行しますか？(y/n): " confirm
+            if [[ $confirm == "y" || $confirm == "Y" ]]; then
+                echo "リストアを実行します"
+                #test
+                decomp $2
+            else
+                echo "リストアをキャンセルしました"
+                exit 1
+            fi
+
             exit 1
             ;;
 
