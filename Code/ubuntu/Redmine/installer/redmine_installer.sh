@@ -2,7 +2,7 @@
 
 # Redmineのインストール
 # 参考URL：https://blog.redmine.jp/articles/6_0/install/ubuntu24/
-# 
+# 5/16 1
 # 概要：Redmineのインストールを行うスクリプト
 #
 # 注意：このスクリプトはUbuntu 24.04 LTSで動作確認済みですが、他のバージョンでも動作する可能性があります。
