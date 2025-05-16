@@ -59,13 +59,10 @@ WEEKLY_ROTATE=5
 #monthly（月次）バックアップのローテーション（世代数）
 MONTHLY_ROTATE=1
 
-<<<<<<< HEAD:Code/ubuntu/Redmine/manegement_tools/burm
-=======
 #バックアップファイルの取り扱いグループ
 CH_BACKUP_OWNER_GROUP=root:root
 #バックアップファイルのパーミッション
 CH_BACKUP_PERMISSION=777
->>>>>>> e8b2b62 (所有者とパーミッションの設定を追加。リストアディレクトリの作成処理を改善。):Code/ubuntu/manegement_tools/burm
 
 #レストアファイルの取り扱いグループ
 CH_RESTORE_OWNER_GROUP=root:root
@@ -119,12 +116,8 @@ copy_files() {
 #pg_dumpの実行関数
 #$1: バックアップ先ディレクトリ
 dump() {
-<<<<<<< HEAD:Code/ubuntu/Redmine/manegement_tools/burm
-    local FILE_NAME="db_dump.sqlc"
-=======
     local FILE_NAME=db_dump.sqlc
     local BACKUP_DIR="$1"
->>>>>>> e8b2b62 (所有者とパーミッションの設定を追加。リストアディレクトリの作成処理を改善。):Code/ubuntu/manegement_tools/burm
     export PGPASSWORD=$DB_PASS
     trap 'unset PGPASSWORD' RETURN
 
@@ -211,15 +204,6 @@ rotate() {
 RESTOR_DIR=$BACKUP_DIR/restore_files
 
 
-<<<<<<< HEAD:Code/ubuntu/Redmine/manegement_tools/burm
-#解凍処理
-decompress() {
-    local SOURCE_FILE=$DECOMP_SOURCE_FULL_PATH
-    local TARGET_DIR=$RESTOR_DIR
-    make_dir "$TARGET_DIR"
-    EXTRACTED_FOLDER=$(tar -tzf "$SOURCE_FILE" -C "$TARGET_DIR" | head -1 | cut -d'/' -f1)
-    tar -xzvf "$SOURCE_FILE" -C "$TARGET_DIR"
-=======
     # DIR_NAMEが存在するか確認
     # DIR_NAMEが存在しない場合は終了
     if [ ! -d "$DIR_NAME" ]; then
@@ -236,75 +220,11 @@ decompress() {
     #chmod $CH_BACKUP_PERMISSION $RESTOR_DIR
     #chown $CH_BACKUP_OWNER_GROUP $RESTOR_DIR
     cp -a $DECOMP_ABS_PATH $RESTOR_DIR/$FILE_NAME
->>>>>>> e8b2b62 (所有者とパーミッションの設定を追加。リストアディレクトリの作成処理を改善。):Code/ubuntu/manegement_tools/burm
     if [ $? -ne 0 ]; then
         echo "解凍に失敗しました: $SOURCE_FILE" >&2
         echo "処理を終了します"
         exit 1
     fi
-<<<<<<< HEAD:Code/ubuntu/Redmine/manegement_tools/burm
-    echo "解凍しました: $EXTRACTED_FOLDER"
-}
-
-
-# postgresqlのリストア
-restore_db() {
-    local SOURCE_FILE=$1
-    export PGPASSWORD=$DB_PASS
-    trap 'unset PGPASSWORD' RETURN
-    #データベースを初期化
-    sudo -u postgres psql -c "DROP DATABASE IF EXISTS $DB_NAME;"
-    sudo -u postgres psql -c "CREATE DATABASE $DB_NAME"
-    sudo -u postgres psql -c "DROP ROLE IF EXISTS $DB_USER;"
-    sudo -u postgres psql -c "CREATE ROLE $DB_USER WITH LOGIN PASSWORD '$DB_PASS';"
-    #pg_restore -h $DB_HOST -U $DB_USER -d $DB_NAME --clean --if-exists --no-owner $SOURCE_FILE
-    pg_restore -h $DB_HOST -U $DB_USER -d $DB_NAME --clean --if-exists --no-owner $SOURCE_FILE
-    if [ $? -ne 0 ]; then
-        echo "データベースのリストアに失敗しました: $SOURCE_FILE" >&2
-        return 1
-    fi
-
-    echo "データベースのリストアを完了しました: $SOURCE_FILE"
-    return 0
-}
-
-
-#リストア処理
-restore() {
-    decompress
-    # filesディレクトリが存在しない場合は作成
-    if [ ! -d $REDMINE_FILE_DIR ]; then
-        make_dir "$REDMINE_FILE_DIR"
-        #所有者をwww-dataに変更
-        chown -R www-data:www-data $REDMINE_FILE_DIR
-        #パーミッションを変更
-        chmod 775 $REDMINE_FILE_DIR
-    fi
-    # filesの復元
-    cp -ar $RESTOR_DIR/$EXTRACTED_FOLDER/files $REDMINE_FILE_DIR
-    if [ $? -ne 0 ]; then
-        echo "filesの復元に失敗しました: $SOURCE_FILE" >&2
-        return 1
-    fi
-    # configの復元
-    cp -ar $RESTOR_DIR/$EXTRACTED_FOLDER/config $REDMINE_CONFIG_DIR
-    if [ $? -ne 0 ]; then
-        echo "configの復元に失敗しました: $SOURCE_FILE" >&2
-        return 1
-    fi
-    #DBの復元
-    echo "$RESTOR_DIR/$EXTRACTED_FOLDER/db_dump.sqlc"
-    restore_db $RESTOR_DIR/$EXTRACTED_FOLDER/db_dump.sqlc
-    if [ $? -ne 0 ]; then
-        echo "データベースのリストアに失敗しました: $SOURCE_FILE" >&2
-        return 1
-    fi
-    echo "バックアップをリストアしました: $SOURCE_DIR -> $TARGET_DIR"
-}
-
-
-
-=======
     echo "ファイルコピー成功：$DIR_NAME/$FILE_NAME -> $RESTOR_DIR/$FILE_NAME"
 
     #　コピーしてきたファイルを解凍して解凍したフォルダだけ残す
@@ -324,7 +244,6 @@ restore() {
     return 0
 }
 
->>>>>>> e8b2b62 (所有者とパーミッションの設定を追加。リストアディレクトリの作成処理を改善。):Code/ubuntu/manegement_tools/burm
 
 # ###################################################################################
 #　メイン処理
