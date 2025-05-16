@@ -53,16 +53,23 @@ DB_HOST=localhost
 
 #ローテーションの設定
 #daily（日次）バックアップのローテーション(世代数)
-DAILY_ROTATE=8
+DAILY_ROTATE=4
 #weekly（週次）バックアップのローテーション（世代数）
 WEEKLY_ROTATE=5
 #monthly（月次）バックアップのローテーション（世代数）
-MONTHLY_ROTATE=6
+MONTHLY_ROTATE=1
 
 #バックアップファイルの取り扱いグループ
-CH_BACKUP_OWNER_GROUP=redmine:redmine
+CH_BACKUP_OWNER_GROUP=root:root
 #バックアップファイルのパーミッション
 CH_BACKUP_PERMISSION=777
+
+#レストアファイルの取り扱いグループ
+CH_RESTORE_OWNER_GROUP=root:root
+#リストアファイルのパーミッション
+CH_RESTORE_PERMISSION=777
+
+RESTOR_DIR="/var/backups/redmine/hukkyuuyouforuda"
 
 
 # ###################################################################################
@@ -101,6 +108,8 @@ copy_files() {
         exit 1
     fi
     echo "バックアップをコピーしました: $SOURCE_DIR -> $DEST_DIR"
+    chmod -R $CH_BACKUP_PERMISSION $DEST_DIR
+    chown -R $CH_BACKUP_OWNER_GROUP $DEST_DIR
     return 0
 }
 
@@ -109,17 +118,19 @@ copy_files() {
 #$1: バックアップ先ディレクトリ
 dump() {
     local FILE_NAME=db_dump.sqlc
+    local BACKUP_DIR="$1"
     export PGPASSWORD=$DB_PASS
     trap 'unset PGPASSWORD' RETURN
 
-    #pg_dump -U "$DB_USER" -h "$DB_HOST" "$DB_NAME" > "$1/$FILE_NAME"
-    pg_dump -U "$DB_USER" -h "$DB_HOST" -Fc --file="$1/$FILE_NAME" "$DB_NAME"
+    #pg_dump -U "$DB_USER" -h "$DB_HOST" "$DB_NAME" > "$BACKUP_DIR/$FILE_NAME"
+    pg_dump -U "$DB_USER" -h "$DB_HOST" -Fc --file="$BACKUP_DIR/$FILE_NAME" "$DB_NAME"
     if [ $? -ne 0 ]; then
         echo "データベースのバックアップに失敗しました: $1" >&2
         return 1
     fi
-
-    echo "pg_dumpを実行しました: $1"
+    chmod -R $CH_BACKUP_PERMISSION $BACKUP_DIR/$FILE_NAME
+    chown -R $CH_BACKUP_OWNER_GROUP $BACKUP_DIR/$FILE_NAME
+    echo "pg_dumpを実行しました: $BACKUP_DIR"
     return 0
 }
 #メモ
@@ -228,20 +239,20 @@ decomp() {
     # $FILE_NAMEの圧縮ファイルから.tar.gzを削除
     local DECOMPED_DIR_NAME=${FILE_NAME%.tar.gz}
 
-    mkdir -p /var/backups/redmine/restore
-    chmod $CH_BACKUP_PERMISSION /var/backups/redmine/restore
-    chown $CH_BACKUP_OWNER_GROUP /var/backups/redmine/restore
-    cp -a $DECOMP_ABS_PATH /var/backups/redmine/restore/$FILE_NAME
+    mkdir -p $RESTOR_DIR
+    #chmod $CH_BACKUP_PERMISSION $RESTOR_DIR
+    #chown $CH_BACKUP_OWNER_GROUP $RESTOR_DIR
+    cp -a $DECOMP_ABS_PATH $RESTOR_DIR/$FILE_NAME
     if [ $? -ne 0 ]; then
         echo "ファイルのコピーに失敗しました: $DIR_NAME/$FILE_NAME" >&2
         exit 1
     fi
-    echo "ファイルコピー成功：$DIR_NAME/$FILE_NAME -> /var/backups/redmine/restore/$FILE_NAME"
+    echo "ファイルコピー成功：$DIR_NAME/$FILE_NAME -> $RESTOR_DIR/$FILE_NAME"
 
     #　コピーしてきたファイルを解凍して解凍したフォルダだけ残す
-    cd /var/backups/redmine/restore/
-    tar -xzf /var/backups/redmine/restore/$FILE_NAME
-    rm -f /var/backups/redmine/restore/$FILE_NAME
+    cd $RESTOR_DIR/
+    tar -xzf $RESTOR_DIR/$FILE_NAME
+    rm -f $RESTOR_DIR/$FILE_NAME
     
     #$DECOMPED_DIR_NAMEが存在するか確認
     # $DECOMPED_DIR_NAMEが存在しない場合は終了
@@ -249,13 +260,12 @@ decomp() {
         echo "解凍先ディレクトリが存在しません: $DIR_NAME/$DECOMPED_DIR_NAME" >&2
         exit 1
     fi
-    echo "解凍先ディレクトリOK：$DIR_NAME/$FILE_NAME -> /var/backups/redmine/restore/$DECOMPED_DIR_NAME"
+    echo "解凍先ディレクトリOK：$DIR_NAME/$FILE_NAME -> $RESTOR_DIR/$DECOMPED_DIR_NAME"
     cd /
     echo "=================解凍完了====================="
     return 0
 }
-#memo
-#sudo dos2unix /home/user/burm || sudo chmod 777 /home/user/burm || /home/user/burm -d
+
 
 # ###################################################################################
 #　メイン処理
