@@ -53,12 +53,26 @@ DB_HOST=localhost
 
 #ローテーションの設定
 #daily（日次）バックアップのローテーション(世代数)
-DAILY_ROTATE=8
+DAILY_ROTATE=4
 #weekly（週次）バックアップのローテーション（世代数）
 WEEKLY_ROTATE=5
 #monthly（月次）バックアップのローテーション（世代数）
-MONTHLY_ROTATE=6
+MONTHLY_ROTATE=1
 
+<<<<<<< HEAD:Code/ubuntu/Redmine/manegement_tools/burm
+=======
+#バックアップファイルの取り扱いグループ
+CH_BACKUP_OWNER_GROUP=root:root
+#バックアップファイルのパーミッション
+CH_BACKUP_PERMISSION=777
+>>>>>>> e8b2b62 (所有者とパーミッションの設定を追加。リストアディレクトリの作成処理を改善。):Code/ubuntu/manegement_tools/burm
+
+#レストアファイルの取り扱いグループ
+CH_RESTORE_OWNER_GROUP=root:root
+#リストアファイルのパーミッション
+CH_RESTORE_PERMISSION=777
+
+RESTOR_DIR="/var/backups/redmine/hukkyuuyouforuda"
 
 
 # ###################################################################################
@@ -96,6 +110,8 @@ copy_files() {
         exit 1
     fi
     echo "バックアップをコピーしました: $SOURCE_DIR -> $DEST_DIR"
+    chmod -R $CH_BACKUP_PERMISSION $DEST_DIR
+    chown -R $CH_BACKUP_OWNER_GROUP $DEST_DIR
     return 0
 }
 
@@ -103,18 +119,24 @@ copy_files() {
 #pg_dumpの実行関数
 #$1: バックアップ先ディレクトリ
 dump() {
+<<<<<<< HEAD:Code/ubuntu/Redmine/manegement_tools/burm
     local FILE_NAME="db_dump.sqlc"
+=======
+    local FILE_NAME=db_dump.sqlc
+    local BACKUP_DIR="$1"
+>>>>>>> e8b2b62 (所有者とパーミッションの設定を追加。リストアディレクトリの作成処理を改善。):Code/ubuntu/manegement_tools/burm
     export PGPASSWORD=$DB_PASS
     trap 'unset PGPASSWORD' RETURN
 
-    #pg_dump -U "$DB_USER" -h "$DB_HOST" "$DB_NAME" > "$1/$FILE_NAME"
-    pg_dump -U "$DB_USER" -h "$DB_HOST" -Fc --file="$1/$FILE_NAME" "$DB_NAME"
+    #pg_dump -U "$DB_USER" -h "$DB_HOST" "$DB_NAME" > "$BACKUP_DIR/$FILE_NAME"
+    pg_dump -U "$DB_USER" -h "$DB_HOST" -Fc --file="$BACKUP_DIR/$FILE_NAME" "$DB_NAME"
     if [ $? -ne 0 ]; then
         echo "データベースのバックアップに失敗しました: $1" >&2
         return 1
     fi
-
-    echo "pg_dumpを実行しました: $1"
+    chmod -R $CH_BACKUP_PERMISSION $BACKUP_DIR/$FILE_NAME
+    chown -R $CH_BACKUP_OWNER_GROUP $BACKUP_DIR/$FILE_NAME
+    echo "pg_dumpを実行しました: $BACKUP_DIR"
     return 0
 }
 #メモ
@@ -189,6 +211,7 @@ rotate() {
 RESTOR_DIR=$BACKUP_DIR/restore_files
 
 
+<<<<<<< HEAD:Code/ubuntu/Redmine/manegement_tools/burm
 #解凍処理
 decompress() {
     local SOURCE_FILE=$DECOMP_SOURCE_FULL_PATH
@@ -196,11 +219,30 @@ decompress() {
     make_dir "$TARGET_DIR"
     EXTRACTED_FOLDER=$(tar -tzf "$SOURCE_FILE" -C "$TARGET_DIR" | head -1 | cut -d'/' -f1)
     tar -xzvf "$SOURCE_FILE" -C "$TARGET_DIR"
+=======
+    # DIR_NAMEが存在するか確認
+    # DIR_NAMEが存在しない場合は終了
+    if [ ! -d "$DIR_NAME" ]; then
+        echo "圧縮ファイルの親ディレクトリが存在しません: $DIR_NAME" >&2
+        exit 1
+    fi
+    echo "親ディレクトリOK：$DIR_NAME"
+    echo "ファイル確認の整合OK：$DECOMP_ABS_PATH"
+
+    # $FILE_NAMEの圧縮ファイルから.tar.gzを削除
+    local DECOMPED_DIR_NAME=${FILE_NAME%.tar.gz}
+
+    mkdir -p $RESTOR_DIR
+    #chmod $CH_BACKUP_PERMISSION $RESTOR_DIR
+    #chown $CH_BACKUP_OWNER_GROUP $RESTOR_DIR
+    cp -a $DECOMP_ABS_PATH $RESTOR_DIR/$FILE_NAME
+>>>>>>> e8b2b62 (所有者とパーミッションの設定を追加。リストアディレクトリの作成処理を改善。):Code/ubuntu/manegement_tools/burm
     if [ $? -ne 0 ]; then
         echo "解凍に失敗しました: $SOURCE_FILE" >&2
         echo "処理を終了します"
         exit 1
     fi
+<<<<<<< HEAD:Code/ubuntu/Redmine/manegement_tools/burm
     echo "解凍しました: $EXTRACTED_FOLDER"
 }
 
@@ -262,6 +304,27 @@ restore() {
 
 
 
+=======
+    echo "ファイルコピー成功：$DIR_NAME/$FILE_NAME -> $RESTOR_DIR/$FILE_NAME"
+
+    #　コピーしてきたファイルを解凍して解凍したフォルダだけ残す
+    cd $RESTOR_DIR/
+    tar -xzf $RESTOR_DIR/$FILE_NAME
+    rm -f $RESTOR_DIR/$FILE_NAME
+    
+    #$DECOMPED_DIR_NAMEが存在するか確認
+    # $DECOMPED_DIR_NAMEが存在しない場合は終了
+    if [ ! -d "$DECOMPED_DIR_NAME" ]; then
+        echo "解凍先ディレクトリが存在しません: $DIR_NAME/$DECOMPED_DIR_NAME" >&2
+        exit 1
+    fi
+    echo "解凍先ディレクトリOK：$DIR_NAME/$FILE_NAME -> $RESTOR_DIR/$DECOMPED_DIR_NAME"
+    cd /
+    echo "=================解凍完了====================="
+    return 0
+}
+
+>>>>>>> e8b2b62 (所有者とパーミッションの設定を追加。リストアディレクトリの作成処理を改善。):Code/ubuntu/manegement_tools/burm
 
 # ###################################################################################
 #　メイン処理
