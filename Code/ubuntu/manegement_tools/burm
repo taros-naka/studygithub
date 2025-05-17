@@ -69,7 +69,8 @@ CH_RESTORE_OWNER_GROUP=root:root
 #リストアファイルのパーミッション
 CH_RESTORE_PERMISSION=777
 
-RESTOR_DIR="/var/backups/redmine/hukkyuuyouforuda"
+#RESTOR_DIR="/var/backups/redmine/hukkyuuyouforuda"
+RESTOR_DIR="$BACKUP_DIR/a"
 
 SQL_COMPED_FILE_NAME=db_dump.sqlc
 # ###################################################################################
@@ -284,8 +285,7 @@ restore_file_copy(){
 
 
 #　SQLのリストア
-db_restore(){
-    local DBUSER_MAKE="CREATE USER redmine WITH PASSWORD '${DB_PASS}';"
+db_format(){
     local RESTORE_DB_FULL_PATH="$RESTOR_DIR/$DECOMPED_DIR_NAME/$SQL_COMPED_FILE_NAME"
     if [ ! -f "$RESTORE_DB_FULL_PATH" ]; then
         echo "リストア用DBファイルが存在しません: $RESTORE_DB_FULL_PATH" >&2
@@ -293,30 +293,64 @@ db_restore(){
     fi
     echo "$RESTORE_DB_FULL_PATH"
     echo "上記のバックアップされたデータベースのファイルを復元します"
+    local DBUSER_MAKE="CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';"
 
-    sudo -u postgres psql <<SQL
--- データベースを初期化
+    sudo -u postgres psql << SQL
 DROP DATABASE IF EXISTS redmine;
-
--- ユーザーを初期化
 DROP USER IF EXISTS redmine;
-${DBUSER_MAKE}
-
--- データベースのみ作成
--- 中身は作らない
-CREATE DATABASE redmine
+CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASS}';
+CREATE DATABASE ${DB_NAME};
 SQL
-    echo "$RESTOR_DIR/$SQL_COMPED_FILE_NAME"
-    echo "上記のバックアップされたデータベースのファイルを復元します"
-    
-
-    export PGPASSWORD=$DB_PASS
-    trap 'unset PGPASSWORD' RETURN
-    #pg_restoreで復元
-    sudo -u postgres pg_restore -h $DB_HOST -U $DB_USER -d $DB_NAME --clean --if-exists --no-owner "$RESTOR_DB_FULL_PATH"
+    if [ $? -ne 0 ]; then
+    echo "DB初期化に失敗しました" >&2
+    return 1
+    fi
+    echo "ユーザの再作成、データベースを初期化しました。"
 }
 
 
+
+
+
+
+
+
+
+db_send(){
+    #export PGPASSWORD=$DB_PASS
+    #trap 'unset PGPASSWORD' RETURN
+    #sudo -u postgres pg_restore -h $DB_HOST -U $DB_USER -d $DB_NAME --clean --if-exists --no-owner $RESTORE_DB_FULL_PATH
+    
+    
+    
+    # バックアップSQLファイルからリストアを実行する
+    #　パスワードを要求されるがのちに修正したい。
+    #　EXPORT PGPASSWORDは適用できないパターン
+    #　sudo → postgres → redmine のため環境変数不適合
+    #　今後解消案を検討
+    #　コマンド直で危険なので不採用
+    #　↓↓↓↓↓↓↓↓↓↓↓↓↓↓
+    #sudo -u postgres pg_restore PGPASSWORD=$DB_PASS -h $DB_HOST -U $DB_USER -d $DB_NAME --clean --if-exists --no-owner $RESTORE_DB_FULL_PATH
+    sudo -u postgres pg_restore  -h $DB_HOST -U $DB_USER -d $DB_NAME --clean --if-exists --no-owner $RESTORE_DB_FULL_PATH
+    if [ $? -ne 0 ]; then
+    echo "リストアに失敗しました。"
+    echo "データベースが破損しました。" >&2
+    return 1
+    exit 1
+    fi
+    return 0
+}
+
+restore(){
+    decomp
+    #db_format
+    #cp
+
+
+
+
+
+}
 
 # ###################################################################################
 #　メイン処理
@@ -369,7 +403,8 @@ while getopts "dwmrhcu" opt; do
             if [[ $confirm == "y" || $confirm == "Y" ]]; then
                 echo "リストアを実行します"
                 decomp $2
-                db_restore
+                db_format
+                db_send
             else
                 echo "リストアをキャンセルしました"
                 exit 1
