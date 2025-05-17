@@ -39,6 +39,7 @@ REDMINE_CONFIG_DIR=/var/lib/redmine/config
 #時間の文字列：yyyy-mm-dd_hh:mm:ss
 #現在の時間を取得
 DATE_DIR=$(date +%Y-%m-%d_%H-%M-%S)
+#DATE_DIR="test"
 
 #フォルダを定義：[daily|weekly|monthly]
 DAILY_DIR=$BACKUP_DIR/daily
@@ -295,28 +296,20 @@ db_format(){
     echo "上記のバックアップされたデータベースのファイルを復元します"
     local DBUSER_MAKE="CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';"
 
-    sudo -u postgres psql << SQL
+    sudo -u postgres psql << EOF
 DROP DATABASE IF EXISTS redmine;
 DROP USER IF EXISTS redmine;
 CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASS}';
 CREATE DATABASE ${DB_NAME};
-SQL
+\q
+EOF
+
     if [ $? -ne 0 ]; then
     echo "DB初期化に失敗しました" >&2
     return 1
     fi
     echo "ユーザの再作成、データベースを初期化しました。"
-}
 
-
-
-
-
-
-
-
-
-db_send(){
     #export PGPASSWORD=$DB_PASS
     #trap 'unset PGPASSWORD' RETURN
     #sudo -u postgres pg_restore -h $DB_HOST -U $DB_USER -d $DB_NAME --clean --if-exists --no-owner $RESTORE_DB_FULL_PATH
@@ -331,13 +324,17 @@ db_send(){
     #　コマンド直で危険なので不採用
     #　↓↓↓↓↓↓↓↓↓↓↓↓↓↓
     #sudo -u postgres pg_restore PGPASSWORD=$DB_PASS -h $DB_HOST -U $DB_USER -d $DB_NAME --clean --if-exists --no-owner $RESTORE_DB_FULL_PATH
-    sudo -u postgres pg_restore  -h $DB_HOST -U $DB_USER -d $DB_NAME --clean --if-exists --no-owner $RESTORE_DB_FULL_PATH
+    echo $RESTORE_DB_FULL_PATH
+    export PGPASSWORD=$DB_PASS
+    trap 'unset PGPASSWORD' RETURN
+    sudo -E -u postgres pg_restore -h $DB_HOST -U $DB_USER -d $DB_NAME --clean --if-exists --no-owner $RESTORE_DB_FULL_PATH
     if [ $? -ne 0 ]; then
     echo "リストアに失敗しました。"
     echo "データベースが破損しました。" >&2
     return 1
     exit 1
     fi
+    
     return 0
 }
 
@@ -404,7 +401,7 @@ while getopts "dwmrhcu" opt; do
                 echo "リストアを実行します"
                 decomp $2
                 db_format
-                db_send
+
             else
                 echo "リストアをキャンセルしました"
                 exit 1
