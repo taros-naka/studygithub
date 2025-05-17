@@ -71,7 +71,7 @@ CH_RESTORE_PERMISSION=777
 
 RESTOR_DIR="/var/backups/redmine/hukkyuuyouforuda"
 
-
+SQL_COMPED_FILE_NAME=db_dump.sqlc
 # ###################################################################################
 #　関数
 # ###################################################################################
@@ -117,19 +117,18 @@ copy_files() {
 #pg_dumpの実行関数
 #$1: バックアップ先ディレクトリ
 dump() {
-    local FILE_NAME=db_dump.sqlc
     local BACKUP_DIR="$1"
     export PGPASSWORD=$DB_PASS
     trap 'unset PGPASSWORD' RETURN
 
-    #pg_dump -U "$DB_USER" -h "$DB_HOST" "$DB_NAME" > "$BACKUP_DIR/$FILE_NAME"
-    pg_dump -U "$DB_USER" -h "$DB_HOST" -Fc --file="$BACKUP_DIR/$FILE_NAME" "$DB_NAME"
+    #pg_dump -U "$DB_USER" -h "$DB_HOST" "$DB_NAME" > "$BACKUP_DIR/$SQL_COMPED_FILE_NAME"
+    pg_dump -U "$DB_USER" -h "$DB_HOST" -Fc --file="$BACKUP_DIR/$SQL_COMPED_FILE_NAME" "$DB_NAME"
     if [ $? -ne 0 ]; then
-        echo "データベースのバックアップに失敗しました: $1" >&2
+        echo "データベースのバックアップに失敗しました: $BACKUP_DIR" >&2
         return 1
     fi
-    chmod -R $CH_BACKUP_PERMISSION $BACKUP_DIR/$FILE_NAME
-    chown -R $CH_BACKUP_OWNER_GROUP $BACKUP_DIR/$FILE_NAME
+    chmod -R $CH_BACKUP_PERMISSION $BACKUP_DIR/$SQL_COMPED_FILE_NAME
+    chown -R $CH_BACKUP_OWNER_GROUP $BACKUP_DIR/$SQL_COMPED_FILE_NAME
     echo "pg_dumpを実行しました: $BACKUP_DIR"
     return 0
 }
@@ -265,6 +264,61 @@ decomp() {
     echo "=================================================================解凍完了====================================================================="
     return 0
 }
+
+
+# restoreのファイルコピー
+restore_file_copy(){
+    #$1:リストアディレクトリ
+    #$2:インプットディレクトリ
+    #$3:固定の存在フォルダ
+    local RESTORE_DIR="$1"
+    local INPUT_DIR="$2"
+    local DIR_NAME="$3"
+
+    # 受け手を削除
+    rm -rf "$INPUT_DIR/$DIR_NAME"
+
+    #リストアファイルを挿入
+    cp -ar "$RESTOR_DIR/$DIR_NAME"
+}
+
+
+#　SQLのリストア
+pg_restore(){
+    sudo -u postgres psql <<-'SQL'
+        
+        -- データベースを初期化
+        DROP DATABASE IF EXISTS redmine;
+
+        -- ユーザーを初期化
+        DROP USER IF EXISTS redmine;
+        CREATE USER redmine WITH PASSWORD 'testpass';
+
+        -- データベースのみ作成
+        -- 中身は作らない
+        CREATE DATABASE redmine
+SQL
+    #postgresのユーザーを削除
+    #今後バックアップユーザでもできるようにする。
+    sudo -u postgres dropuser -h localhost -U postgres redmine
+
+    #postgresのDBを削除
+    sudo -u postgres dropuser -h localhost -U postgres redmine
+
+    #postgresのユーザーを作成
+    
+
+
+    #postgresのDBのみ作成
+
+
+    #pg_restoreで復元
+    export PGPASSWORD=$DB_PASS
+    trap 'unset PGPASSWORD' RETURN
+    pg_restore -h $DB_HOST -U $DB_USER -d $DB_NAME --clean --if-exists --no-owner "$SQL_COMPED_FILE_NAME"
+
+}
+
 
 
 # ###################################################################################
